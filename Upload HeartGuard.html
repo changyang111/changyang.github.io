@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>心康守护 - HeartGuard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', 'system-ui', sans-serif; background-color: #f8fafc; -webkit-tap-highlight-color: transparent; }
+        .card { background: white; border-radius: 1.25rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); }
+        .status-badge { padding: 4px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; }
+        .status-normal { background: #dcfce7; color: #166534; }
+        .status-high { background: #fee2e2; color: #991b1b; }
+        /* 隐藏原生时间输入框的图标，做自定义样式 */
+        input[type="time"] { position: relative; appearance: none; -webkit-appearance: none; }
+    </style>
+</head>
+<body class="pb-28">
+
+    <!-- 顶部状态 -->
+    <header class="bg-white/80 backdrop-blur-md border-b sticky top-0 z-10 px-6 py-4">
+        <div class="flex justify-between items-center max-w-lg mx-auto">
+            <div>
+                <h1 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                    <span class="text-red-500 text-2xl">❤️</span> 心康守护
+                </h1>
+                <p id="clock" class="text-xs font-mono text-blue-500 font-bold mt-1">00:00:00</p>
+            </div>
+            <div class="text-right">
+                <p class="text-[10px] text-slate-400">上次备份</p>
+                <p id="last-sync" class="text-[10px] text-slate-500 font-bold">刚刚</p>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-lg mx-auto p-5 space-y-6">
+        
+        <!-- 服药计划 -->
+        <section class="card p-6 border border-slate-100">
+            <div class="flex justify-between items-center mb-5">
+                <h2 class="text-lg font-black text-slate-800">💊 服药闹钟</h2>
+                <div class="flex gap-2">
+                    <button onclick="resetDailyStatus()" class="text-[10px] bg-slate-100 px-3 py-1.5 rounded-full text-slate-600 font-bold active:scale-95 transition">重置打卡</button>
+                </div>
+            </div>
+            <div id="med-list" class="space-y-4">
+                <!-- 由JS生成 -->
+            </div>
+        </section>
+
+        <!-- 血压录入 -->
+        <section class="card p-6 border border-slate-100 bg-gradient-to-br from-white to-slate-50">
+            <h2 class="text-lg font-black mb-5 text-slate-800 flex items-center gap-2">
+                🩺 录入血压 
+            </h2>
+            <div class="grid grid-cols-2 gap-5 mb-5">
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold text-slate-500 ml-1">收缩压 (高压)</label>
+                    <input type="number" id="systolic" pattern="\d*" placeholder="120" class="w-full bg-white border-2 border-slate-100 rounded-2xl px-4 py-4 outline-none focus:border-blue-500 text-xl font-black text-slate-700 transition">
+                </div>
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold text-slate-500 ml-1">舒张压 (低压)</label>
+                    <input type="number" id="diastolic" pattern="\d*" placeholder="80" class="w-full bg-white border-2 border-slate-100 rounded-2xl px-4 py-4 outline-none focus:border-blue-500 text-xl font-black text-slate-700 transition">
+                </div>
+            </div>
+            <button onclick="saveBP()" class="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-blue-200 active:scale-[0.98] transition">
+                保存今日数据
+            </button>
+        </section>
+
+        <!-- 趋势图 -->
+        <section class="card p-6">
+            <h2 class="text-lg font-black mb-5 text-slate-800">波动趋势</h2>
+            <div class="relative h-48 w-full">
+                <canvas id="bpChart"></canvas>
+            </div>
+        </section>
+
+        <!-- 历史记录 -->
+        <section class="card p-6">
+            <div class="flex justify-between items-center mb-5">
+                <h2 class="text-lg font-black text-slate-800">历史记录</h2>
+                <button onclick="clearHistory()" class="text-[10px] text-red-400 font-bold">清空日志数据</button>
+            </div>
+            <div id="history-list" class="space-y-3 max-h-80 overflow-y-auto pr-1">
+                <!-- 由JS生成 -->
+            </div>
+        </section>
+
+        <!-- 数据管理 -->
+        <div class="flex justify-center gap-4">
+            <button onclick="exportData()" class="text-[10px] text-blue-500 font-bold underline">导出备份数据</button>
+            <button onclick="importData()" class="text-[10px] text-slate-400 font-bold underline">导入备份数据</button>
+        </div>
+
+    </main>
+
+    <!-- 提醒弹窗 -->
+    <div id="notification" class="fixed top-6 left-6 right-6 bg-slate-900 text-white p-5 rounded-3xl shadow-2xl transform translate-y-[-250%] transition-all duration-700 z-50">
+        <div class="flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <div class="bg-blue-500 p-2 rounded-2xl text-xl animate-bounce">💊</div>
+                <div>
+                    <p class="font-black text-lg">时间到！</p>
+                    <p class="text-xs text-slate-400 font-bold" id="notify-text"></p>
+                </div>
+            </div>
+            <button onclick="closeNotification()" class="bg-white text-slate-900 px-5 py-2.5 rounded-2xl font-black text-sm active:scale-90 transition">已服用</button>
+        </div>
+    </div>
+
+    <!-- 警报蒙层 -->
+    <div id="alert-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-[60] hidden p-6">
+        <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-sm text-center shadow-2xl">
+            <div class="text-6xl mb-6">🚑</div>
+            <h3 class="text-2xl font-black text-red-600 mb-3">血压数值偏高</h3>
+            <p class="text-slate-500 font-medium leading-relaxed mb-8" id="alert-msg"></p>
+            <button onclick="closeAlert()" class="w-full bg-slate-900 text-white font-black py-4 rounded-2xl active:scale-95 transition">我知道了</button>
+        </div>
+    </div>
+
+    <script>
+        const STORE_MEDS = 'hg_med_config';
+        const STORE_BP = 'hg_bp_history';
+        const STORE_DATE = 'hg_last_run';
+
+        let meds = JSON.parse(localStorage.getItem(STORE_MEDS)) || [
+            { id: 1, name: '高血压药', time: '08:00', icon: '🩺', taken: false },
+            { id: 2, name: '心血管保护', time: '08:30', icon: '❤️', taken: false },
+            { id: 3, name: '深海鱼油', time: '12:30', icon: '🐟', taken: false }
+        ];
+
+        let history = JSON.parse(localStorage.getItem(STORE_BP)) || [];
+
+        function save() {
+            localStorage.setItem(STORE_MEDS, JSON.stringify(meds));
+            localStorage.setItem(STORE_BP, JSON.stringify(history));
+            document.getElementById('last-sync').innerText = new Date().toLocaleTimeString();
+        }
+
+        function renderMeds() {
+            const container = document.getElementById('med-list');
+            container.innerHTML = meds.map(m => `
+                <div class="flex items-center justify-between p-4 border-2 ${m.taken ? 'bg-slate-50 border-slate-50' : 'bg-white border-slate-50 shadow-sm'} rounded-2xl transition-all">
+                    <div class="flex items-center gap-4">
+                        <span class="text-3xl">${m.icon}</span>
+                        <div>
+                            <p class="font-black text-slate-800 ${m.taken ? 'line-through text-slate-400' : ''}">${m.name}</p>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg">${m.time}</span>
+                                <input type="time" value="${m.time}" onchange="updateTime(${m.id}, this.value)" 
+                                       class="absolute w-12 opacity-0 cursor-pointer">
+                                <span class="text-[10px] text-slate-300 font-bold italic underline">更改</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="toggleMed(${m.id})" 
+                        class="px-6 py-2.5 rounded-2xl text-sm font-black transition-all active:scale-90
+                        ${m.taken ? 'bg-green-500 text-white shadow-lg shadow-green-100' : 'bg-slate-800 text-white shadow-lg shadow-slate-200'}">
+                        ${m.taken ? '✓' : '打卡'}
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function renderHistory() {
+            const container = document.getElementById('history-list');
+            if (history.length === 0) {
+                container.innerHTML = '<div class="text-center py-10 text-slate-300 font-bold text-sm">暂无记录，请开始测量</div>';
+                return;
+            }
+            container.innerHTML = [...history].reverse().map(h => `
+                <div class="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
+                    <div class="flex items-center gap-4">
+                        <div class="h-2 w-2 rounded-full ${h.status==='high'?'bg-red-500':'bg-green-500'}"></div>
+                        <div>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase">${h.date}</p>
+                            <p class="font-mono font-black text-slate-700 text-lg">${h.sys} <span class="text-slate-300 font-normal">/</span> ${h.dia}</p>
+                        </div>
+                    </div>
+                    <span class="status-badge ${h.status==='high'?'status-high':'status-normal'}">
+                        ${h.status==='high'?'超标':'理想'}
+                    </span>
+                </div>
+            `).join('');
+        }
+
+        function updateTime(id, val) {
+            meds = meds.map(m => m.id === id ? {...m, time: val} : m);
+            save(); renderMeds();
+        }
+
+        function toggleMed(id) {
+            meds = meds.map(m => m.id === id ? {...m, taken: !m.taken} : m);
+            save(); renderMeds();
+        }
+
+        function saveBP() {
+            const sys = parseInt(document.getElementById('systolic').value);
+            const dia = parseInt(document.getElementById('diastolic').value);
+            if(!sys || !dia) return;
+            const isHigh = (sys >= 140 || dia >= 90);
+            const now = new Date();
+            const dateStr = `${now.getMonth()+1}月${now.getDate()}日 ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            history.push({ date: dateStr, sys, dia, status: isHigh ? 'high' : 'normal' });
+            save();
+            if(isHigh) {
+                document.getElementById('alert-msg').innerHTML = `当前数值 <span class="text-red-600 font-black">${sys}/${dia}</span> 已属于高血压范围。<br><br>建议：静坐15分钟后重测。如伴有头晕、胸闷，请务必联系医生。`;
+                document.getElementById('alert-modal').classList.remove('hidden');
+            }
+            updateChart(); renderHistory();
+            document.getElementById('systolic').value = '';
+            document.getElementById('diastolic').value = '';
+        }
+
+        function resetDailyStatus() {
+            if(confirm("确定要重置今日所有药品的打卡状态吗？")) {
+                meds.forEach(m => m.taken = false);
+                save(); renderMeds();
+            }
+        }
+
+        function clearHistory() {
+            if(confirm("警告：这将永久删除所有历史血压数据。确认吗？")) {
+                history = []; save(); renderHistory(); updateChart();
+            }
+        }
+
+        function exportData() {
+            const data = btoa(JSON.stringify({meds, history}));
+            prompt("请复制以下备份代码并保存：", data);
+        }
+
+        function importData() {
+            const data = prompt("请输入备份代码：");
+            if(data) {
+                try {
+                    const parsed = JSON.parse(atob(data));
+                    meds = parsed.meds; history = parsed.history;
+                    save(); location.reload();
+                } catch(e) { alert("数据格式错误！"); }
+            }
+        }
+
+        let chart;
+        function updateChart() {
+            const ctx = document.getElementById('bpChart');
+            const slice = history.slice(-7);
+            const config = {
+                type: 'line',
+                data: {
+                    labels: slice.map(h => h.date.split(' ')[0]),
+                    datasets: [
+                        { label: '高压', data: slice.map(h => h.sys), borderColor: '#ef4444', borderWidth: 4, pointBackgroundColor: '#fff', tension: 0.4 },
+                        { label: '低压', data: slice.map(h => h.dia), borderColor: '#3b82f6', borderWidth: 4, pointBackgroundColor: '#fff', tension: 0.4 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { display: false, min: 50, max: 200 }, x: { grid: { display: false }, border: { display: false } } }
+                }
+            };
+            if(chart) chart.destroy();
+            chart = new Chart(ctx, config);
+        }
+
+        function tick() {
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            const hm = timeStr.substring(0, 5);
+            document.getElementById('clock').innerText = timeStr;
+            
+            meds.forEach(m => {
+                if(m.time === hm && !m.taken) {
+                    const notify = document.getElementById('notification');
+                    if(notify.style.transform !== 'translateY(0px)') {
+                        document.getElementById('notify-text').innerText = `现在是 ${m.time}，请记得服用【${m.name}】`;
+                        notify.style.transform = 'translateY(0px)';
+                    }
+                }
+            });
+            
+            // 自动跨天重置
+            const today = now.toDateString();
+            if(localStorage.getItem(STORE_DATE) !== today) {
+                meds.forEach(m => m.taken = false);
+                localStorage.setItem(STORE_DATE, today);
+                save(); renderMeds();
+            }
+        }
+
+        function closeNotification() { document.getElementById('notification').style.transform = 'translateY(-250%)'; }
+        function closeAlert() { document.getElementById('alert-modal').classList.add('hidden'); }
+
+        window.onload = () => {
+            renderMeds(); renderHistory(); updateChart();
+            setInterval(tick, 1000);
+        };
+    </script>
+</body>
+</html>
